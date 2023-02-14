@@ -1,0 +1,5 @@
+geopandas~=0.10
+pygeos==0.13
+rtree==1.0.0
+requests~=2.26
+tqdm~=4.64
