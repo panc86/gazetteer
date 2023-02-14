@@ -13,7 +13,7 @@ The files are saved in ~/plugins/geocoder/data.
 
 ```shell
 # export `http_proxy`, and `https_proxy` environment variables if behind a proxy
-bash ./tools/regions_builder/build.sh
+bash build.sh
 ```
 
 ## Info
