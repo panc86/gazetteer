@@ -1,1 +1,12 @@
+# Python
+__pycache__
+.pytest_cache
+*.pyc
+*.egg-info
+*.ipynb
+*.ipynb_checkpoints
+.pyenv
+
+# Release
 data/
+*.zip
