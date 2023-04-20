@@ -35,6 +35,7 @@ Each region contains:
 * `geometry` / region geometry
 * `region_id` / unique region identifier
 * `country_name` / GADM NAME_0 attribute
+* `country_code` / GADM GID_0 attribute
 * `region_name` / GADM NAME_1 attribute
 * `subregion_name` / GADM NAME_2 attribute
 * `region_names` / GADM VARNAME + NL_NAME concatenation of level 1 to 2

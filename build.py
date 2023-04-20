@@ -2,12 +2,14 @@ import logging
 import os
 import typing
 import numpy
-import geopandas
 import pandas
 import zipfile
 import requests
-from tqdm import tqdm
 
+os.environ['USE_PYGEOS'] = '0'
+import geopandas
+
+from tqdm import tqdm
 from config import LEVEL0_REGIONS, LEVEL2_REGIONS
 
 # enable logging
@@ -57,7 +59,7 @@ def load_gadm_regions(filepath):
     https://gadm.org/metadata.html
     """
     console.info("loading GADM regions...")
-    features = ["geometry", "NAME_0", "NAME_1", "VARNAME_1", "NL_NAME_1", "NAME_2", "VARNAME_2", "NL_NAME_2"]
+    features = ["geometry", "GID_0", "NAME_0", "NAME_1", "VARNAME_1", "NL_NAME_1", "NAME_2", "VARNAME_2", "NL_NAME_2"]
     regions = geopandas.read_file(filepath)
     return regions[features].replace(" ", numpy.nan).replace("?", numpy.nan).replace("n.a.", numpy.nan)
 
@@ -144,14 +146,14 @@ def dissolve_regions(regions: geopandas.GeoDataFrame) -> geopandas.GeoDataFrame:
     def merge_region_names(rows):
         names = set(rows.values.flatten())
         return "|".join([k for k in names if isinstance(k, str)])
-    col_mapping = dict(NAME_0="country_name", NAME_1="region_name", NAME_2="subregion_name")
+    col_mapping = dict(NAME_0="country_name", GID_0="country_code", NAME_1="region_name", NAME_2="subregion_name")
     total = len(regions)
     # filter aggregated regions
     agg_mask = regions.NAME_0.isin(LEVEL0_REGIONS)
     agg_reg = regions[agg_mask]
-    agg_reg_names = agg_reg.groupby(by="NAME_0")[["NAME_1", "NL_NAME_1", "VARNAME_1"]].apply(merge_region_names)
+    agg_reg_names = agg_reg.groupby(by="NAME_0")[["GID_0", "NAME_1", "NL_NAME_1", "VARNAME_1"]].apply(merge_region_names)
     agg_reg_names.name = "region_names"
-    agg_reg_dis = agg_reg.dissolve(by="NAME_0", as_index=False).join(agg_reg_names, on="NAME_0").rename(columns=col_mapping).loc[:, ("geometry", "country_name", "region_names")]
+    agg_reg_dis = agg_reg.dissolve(by="NAME_0", as_index=False).join(agg_reg_names, on="NAME_0").rename(columns=col_mapping).loc[:, ("geometry", "country_name", "country_code", "region_names")]
     agg_reg_dis["agglev"] = 0
     agg_reg_dis["region_name"] = agg_reg_dis["country_name"]
     agg_reg_dis["subregion_name"] = numpy.nan
@@ -161,7 +163,7 @@ def dissolve_regions(regions: geopandas.GeoDataFrame) -> geopandas.GeoDataFrame:
     dec_reg = regions[dec_mask].fillna("")
     dec_dissolve_key = regions.NAME_0+"-"+regions.NAME_1+"-"+regions.NAME_2
     dec_reg["region_names"] = (dec_reg.NAME_1 +"|"+ dec_reg.NL_NAME_1 +"|"+ dec_reg.VARNAME_1 +"|"+ dec_reg.NAME_2 +"|"+ dec_reg.NL_NAME_2 +"|"+ dec_reg.VARNAME_2).str.strip("|")
-    dec_reg_dis = dec_reg.dissolve(by=dec_dissolve_key, as_index=False).rename(columns=col_mapping).loc[:, ("geometry", "country_name", "region_name", "subregion_name", "region_names")]
+    dec_reg_dis = dec_reg.dissolve(by=dec_dissolve_key, as_index=False).rename(columns=col_mapping).loc[:, ("geometry", "country_name", "country_code", "region_name", "subregion_name", "region_names")]
     dec_reg_dis["agglev"] = 2
     console.info("{:.1f}% level 2 regions dissolved".format(round(100*dec_mask.sum()/total, 1)))
     # filter remaining regions
@@ -169,7 +171,7 @@ def dissolve_regions(regions: geopandas.GeoDataFrame) -> geopandas.GeoDataFrame:
     other_reg = regions[other_mask].fillna("")
     other_dissolve_key = regions.NAME_0+"-"+regions.NAME_1
     other_reg["region_names"] = (other_reg.NAME_1 +"|"+ other_reg.NL_NAME_1 +"|"+ other_reg.VARNAME_1).str.strip("|")
-    other_reg_dis = other_reg.dissolve(by=other_dissolve_key, as_index=False).rename(columns=col_mapping).loc[:, ("geometry", "country_name", "region_name", "region_names")]
+    other_reg_dis = other_reg.dissolve(by=other_dissolve_key, as_index=False).rename(columns=col_mapping).loc[:, ("geometry", "country_name", "country_code", "region_name", "region_names")]
     other_reg_dis["agglev"] = 1
     other_reg_dis["subregion_name"] = numpy.nan
     console.info("{:.1f}% level 1 regions dissolved".format(round(100*other_mask.sum()/total, 1)))
@@ -283,6 +285,20 @@ def build_places(polygons):
     return places
 
 
+def build_gazetteer(places):
+    # extract place names
+    names = places[["country_name", "country_code", "region_id", "region_name", "subregion_name", "place_name"]].astype("category")
+    coords = places[["latitude", "longitude"]]
+    # extract alternative region names
+    alt_region_names = pandas.DataFrame(places.region_names.fillna('').str.split('|').tolist()).astype("category")
+    alt_region_names.columns = ["region_an_{n}".format(n=c) for c in alt_region_names.columns]
+    # extract alternative place names
+    alt_place_names = pandas.DataFrame(places.place_names.fillna('').str.split(',').tolist()).astype("category")
+    alt_place_names.columns = ["place_an_{n}".format(n=c) for c in alt_place_names.columns]
+    # concatenate
+    return pandas.concat([names, alt_region_names, alt_place_names, coords], axis=1)
+
+
 if __name__ == "__main__":
     if CLEAN:
         clean_data_dir()
@@ -290,4 +306,6 @@ if __name__ == "__main__":
     regions = build_regions()
     # build smdrm places (Geonames cities)
     places = build_places(regions.drop(columns=["latitude", "longitude"]))
-
+    # build gazetteer
+    gazetteer = build_gazetteer(places)
+    gazetteer.to_pickle(os.path.join(data_dir, "gazetteer.pkl"), protocol=5)

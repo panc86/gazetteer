@@ -13,6 +13,6 @@ docker build ${CWD}/ \
     --build-arg https_proxy=${https_proxy:-} \
     --build-arg SMDRM_UID=$(id -u) \
     --tag $TAG
-mkdir -p /data/geocoder
-docker run --rm -it -v /data/geocoder:/app/data $TAG
+mkdir -p $CWD/data
+docker run --rm -it -v $CWD/data:/app/data $TAG
 echo OK
