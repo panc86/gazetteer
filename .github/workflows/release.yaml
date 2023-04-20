@@ -19,6 +19,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Build gazetteer
         run: |
+          mkdir ./data
           python build.py
           zip --junk-paths gazetteer ./data/gazetteer.csv
       - name: Changelog
