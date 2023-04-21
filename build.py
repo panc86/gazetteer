@@ -54,6 +54,7 @@ def drop_polygons(polygons):
 
 def get_gadm_polygons():
     """Load polygons from GADM GeoPackage data. https://gadm.org/metadata.html"""
+    print("⏳ Fetching GADM polygons...")
     dwn_filepath = os.path.join(data_dir, "gadm-gpkg.zip")
     if not os.path.exists(dwn_filepath):
         download_data("https://geodata.ucdavis.edu/gadm/gadm4.0/gadm404-gpkg.zip", dwn_filepath)
@@ -101,6 +102,7 @@ def get_geonames_cities15k():
         - asciiname       > city_asciiname
         - alternatenames  > city_alternatenames
     """
+    print("⏳ Fetching (geonames) cities15k points...")
     dwn_filepath = os.path.join(data_dir, "cities15000.zip")
     if not os.path.exists(dwn_filepath):
         download_data("http://download.geonames.org/export/dump/cities15000.zip", dwn_filepath)
@@ -163,6 +165,7 @@ def build_regions_gazetteer(polygons):
 
 
 def point_in_polygon(points, polygons):
+    print("⏳ Executing point-in-polygon spatial join...")
     # exec spatial join and return index_right i.e. the polygon ID containing the point
     joined = points.sjoin(polygons, how="left", predicate="within")
     # spatially join points outside polygon with nearest polygon and update missing records
@@ -172,7 +175,6 @@ def point_in_polygon(points, polygons):
 
 
 def main():
-    print("building gazetteer...")
     # GADM polygons
     polygons = get_gadm_polygons().pipe(apply_polygon_names_mapping).pipe(drop_polygons)
     polygons_geom = geopandas.GeoDataFrame(polygons.pop("geometry"))
@@ -188,8 +190,8 @@ def main():
     fn = os.path.join(data_dir, "gazetteer.csv")
     places_g["polygon_index"] = joined.index_right.astype(int)
     gazetteer = places_g.join(regions_g, on="polygon_index").drop(columns=["polygon_index"])
-    gazetteer.to_csv(fn, index=False, compression={'method': 'gzip', 'compresslevel': 6})
-    print("{fn} built!".format(fn=fn))
+    gazetteer.to_csv(fn, index=False)
+    print("⌛ {fn} built!".format(fn=fn))
 
 
 if __name__ == "__main__":

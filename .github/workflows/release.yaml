@@ -13,6 +13,9 @@ jobs:
       - uses: actions/checkout@v3
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+          cache: 'pip'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -21,7 +24,6 @@ jobs:
         run: |
           mkdir ./data
           python build.py
-          zip --junk-paths gazetteer ./data/gazetteer.csv
       - name: Changelog
         uses: scottbrenner/generate-changelog-action@master
         id: Changelog
@@ -46,6 +48,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./gazetteer.zip
-          asset_name: gazetteer.zip
-          asset_content_type: application/zip
+          asset_path: ./data/gazetteer.zip
+          asset_name: gazetteer.csv
+          asset_content_type: text/csv
