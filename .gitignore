@@ -5,7 +5,7 @@ __pycache__
 *.egg-info
 *.ipynb
 *.ipynb_checkpoints
-.pyenv
+.pyve
 
 # Release
 data/
