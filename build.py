@@ -39,24 +39,27 @@ def download_geometries(url: str) -> str:
 
 
 def unzip_gadm(filepath):
+    logging.debug("unzip {}".format(filepath))
     with zipfile.ZipFile(filepath, 'r') as archive:
         archive.extractall(path=os.path.dirname(filepath))
-    logging.debug("unzipped {}".format(filepath))
     return filepath.replace("-gdb.zip", ".gdb")
 
 
 def load_gadm(path: str) -> pandas.DataFrame:
+    logging.debug("loading GADM polygons")
     return geopandas.read_file(path, driver='FileGDB')
 
 
 def remove_polygons(df: pandas.DataFrame) -> pandas.DataFrame:
     """Remove polygons without social media activity"""
+    logging.debug("remove unused GADM polygons")
     to_drop = ["Antartica", "Caspian Sea"]
     return df.loc[~df.NAME_0.isin(to_drop), :].copy()
 
 
 def update_polygon_meta(df: pandas.DataFrame) -> pandas.DataFrame:
     """Update missing metadata"""
+    logging.debug("update missing GADM polygon meta")
     # Ukraine
     df.loc[(df.NAME_1 == "?").idxmax(), ["NAME_1","NL_NAME_1","HASC_1","ENGTYPE_1"]] = ["Kiev City", "Київ", "UA.KC", "Independent City"]
     return df
@@ -64,6 +67,7 @@ def update_polygon_meta(df: pandas.DataFrame) -> pandas.DataFrame:
 
 def fill_missing_region_names(df: pandas.DataFrame) -> pandas.DataFrame:
     """Fill missing region names with country name"""
+    logging.debug("fill missing GADM region names with country name")
     regionless = df.NAME_1.isna()
     df.loc[regionless, "NAME_1"] = df.loc[regionless, "NAME_0"]
     return df
@@ -71,6 +75,7 @@ def fill_missing_region_names(df: pandas.DataFrame) -> pandas.DataFrame:
 
 def rename_region_name_attributes(df: pandas.DataFrame) -> pandas.DataFrame:
     """Rename wrong region name attributes"""
+    logging.debug("rename wrong GADM region name attributes")
     mapping = {
         "Apulia": "Puglia",
         "Sicily": "Sicilia",
@@ -94,6 +99,7 @@ def download_geonames_cities_15k():
     """
     Geonames DB @ http://download.geonames.org/export/dump/cities15000.zip
     """
+    logging.debug("loading geonamnes cities15000 points")
     fields = [
         # from cities15000.txt (Geonames)
         "city_id",
@@ -138,6 +144,7 @@ def points_in_polygons_lookup(points, polygons) -> pandas.Series:
 
 
 def build_place_gazetteer(points: pandas.DataFrame) -> pandas.DataFrame:
+    logging.debug("build place gazetteer")
     # extract places
     places = points.city_name.rename("place_name")
     # explode_alternate_names
@@ -149,37 +156,47 @@ def build_place_gazetteer(points: pandas.DataFrame) -> pandas.DataFrame:
 
 
 def build_region_gazetteer(polygons: pandas.DataFrame) -> pandas.DataFrame:
+    logging.debug("build region gazetteer")
     prefix = "region_"
-    gazetteer = pandas.concat([
-        polygons.GID_0,
-        polygons.NAME_0,
-        polygons.loc[:, ["NAME_1","NL_NAME_1","NAME_2","NL_NAME_2","NAME_3","NL_NAME_3","NAME_4","NAME_5"]
-    ].add_prefix(prefix)], axis=1)
-
+    # concatenate lower level first to be stacked right to places in next step
+    regions = pandas.DataFrame()
     for lev in range(4):
         col = "VARNAME_{}".format(lev+1)
-        level_prefix = "{prefix}_{col}_alt".format(prefix=prefix, col=col)
-        altname = pandas.DataFrame(polygons[col].fillna('').str.split("|").tolist()).add_prefix(level_prefix)
-        gazetteer = pandas.concat([gazetteer, altname], axis=1)
+        regions = pandas.concat([
+            regions,
+            pandas.DataFrame(polygons[col].fillna('').str.split("|").tolist()).add_prefix("".join([prefix, col, "_alt"]))
+        ], axis=1)
+    # build region gazetteer
+    gazetteer = pandas.concat([
+        regions,
+        polygons.loc[:, ["NAME_5","NAME_4","NL_NAME_3","NAME_3","NL_NAME_2","NAME_2","NL_NAME_1","NAME_1"]].add_prefix(prefix),
+        polygons.NAME_0,
+        polygons.GID_0,
+        polygons.UID,
+    ], axis=1)
+    # normalize column names
     gazetteer.columns = gazetteer.columns.str.lower()
     return gazetteer
 
 
 def build_gazetteer(points: pandas.DataFrame, polygons: pandas.DataFrame) -> None:
+    logging.info("building gazetteer")
     places_gazetteer = build_place_gazetteer(points)
     regions_gazetteer = build_region_gazetteer(polygons)
     places_gazetteer["polygon_index"] = points_in_polygons_lookup(points, polygons)
+    # stack region names right to follow the place size logic place > region_N > Country
     gazetteer = places_gazetteer.join(regions_gazetteer, on="polygon_index").drop(columns=["polygon_index"])
     gazetteer.to_csv(os.path.join(DATA_PATH, "gazetteer.csv.zip"), index=False)
 
 
 def build_regions(polygons: pandas.DataFrame) -> None:
     """Build regions from dissolved polygons"""
-    features = ["geometry","UID","NAME_1","NL_NAME_1","NAME_0","GID_0"]
+    logging.info("building regions")
+    features = ["geometry","UID","NL_NAME_1","NAME_1","NAME_0","GID_0"]
     # aggregate regions using GADM NAME_1 level shape(3555, 6)
     polygons.dissolve(
         by="NAME_1", aggfunc='first', as_index=False, level=None, sort=True, observed=False, dropna=False
-    )[features].to_file(os.path.join(DATA_PATH, 'gadm41_regions.shp.zip'))
+    )[features].to_file(os.path.join(DATA_PATH, 'gadm41_regions.shp.zip'), driver='ESRI Shapefile')
 
 
 def main():
