@@ -23,9 +23,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # files in data do not change unless
+      # repo URL is updated and new file is downloaded
+      - name: Cache Polygons
+        id: cache-polygons
+        uses: actions/cache@v3
+        with:
+          path: ./data
+          key: ${{ runner.os }}-polygons
+
       - name: Build gazetteer
         run: |
-          mkdir ./data
+          mkdir -p ./data
           python build.py
       - name: Changelog
         uses: scottbrenner/generate-changelog-action@master
@@ -51,8 +61,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./data/gazetteer.csv.zip
-          asset_name: gazetteer.csv.zip
+          asset_path: ./data/gazetteer.json.zip
+          asset_name: gazetteer.json.zip
           asset_content_type: application/zip
       - name: Upload GADM Regions Asset
         id: upload-region-release-asset 

@@ -150,8 +150,8 @@ def build_place_gazetteer(points: pandas.DataFrame) -> pandas.DataFrame:
     ascii_places = points.city_asciiname.rename("place_name_ascii")
     # explode_alternate_names
     alt_places = pandas.DataFrame(
-        points.city_alternatenames.fillna('').str.split(",").tolist()
-    ).add_prefix("place_name_alt")
+        points.city_alternatenames.fillna('tempvalue').str.split(",").tolist()
+    ).replace('tempvalue', None).add_prefix("place_name_alt")
     # build gazetteer
     return pandas.concat([points.latitude.astype(float), points.longitude.astype(float), places, ascii_places, alt_places], axis=1)
 
@@ -160,16 +160,18 @@ def build_region_gazetteer(polygons: pandas.DataFrame) -> pandas.DataFrame:
     logging.debug("build region gazetteer")
     prefix = "region_"
     # concatenate lower level first to be stacked right to places in next step
-    regions = pandas.DataFrame()
+    varnames = pandas.DataFrame()
     for lev in range(4):
         col = "VARNAME_{}".format(lev+1)
-        regions = pandas.concat([
-            regions,
-            pandas.DataFrame(polygons[col].fillna('').str.split("|").tolist()).add_prefix("".join([prefix, col, "_alt"]))
+        varnames = pandas.concat([
+            varnames,
+            pandas.DataFrame(
+                polygons[col].fillna('tempvalue').str.split("|").tolist()
+            ).add_prefix("".join([prefix, col, "_alt"]))
         ], axis=1)
     # build region gazetteer
     gazetteer = pandas.concat([
-        regions,
+        varnames.replace('tempvalue', None),
         polygons.loc[:, ["NAME_5","NAME_4","NL_NAME_3","NAME_3","NL_NAME_2","NAME_2","NL_NAME_1","NAME_1"]].add_prefix(prefix),
         polygons.NAME_0,
         polygons.GID_0,
@@ -187,7 +189,7 @@ def build_gazetteer(points: pandas.DataFrame, polygons: pandas.DataFrame) -> Non
     places_gazetteer["polygon_index"] = points_in_polygons_lookup(points, polygons)
     # stack region names right to follow the place size logic place > region_N > Country
     gazetteer = places_gazetteer.join(regions_gazetteer, on="polygon_index").drop(columns=["polygon_index"])
-    gazetteer.to_csv(os.path.join(DATA_PATH, "gazetteer.csv.zip"), index=False)
+    gazetteer.to_json(os.path.join(DATA_PATH, "gazetteer.json.zip"), orient="records", date_format=None, lines=True, force_ascii=False)
 
 
 def build_regions(polygons: pandas.DataFrame) -> None:
