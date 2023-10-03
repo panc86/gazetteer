@@ -124,21 +124,21 @@ def download_geonames_cities_15k():
     ]
     path = download_geometries("http://download.geonames.org/export/dump/cities15000.zip")
     cities = pandas.read_csv(path, sep="\t", names=fields)
-    return (
-        geopandas.GeoDataFrame(cities.drop(columns=["latitude", "longitude"]))
-        .set_geometry(geopandas.points_from_xy(cities.longitude, cities.latitude))
-    )
+    return cities
 
 
 def points_in_polygons_lookup(points, polygons) -> pandas.Series:
     logging.debug("⏳ executing point-in-polygon spatial join")
     # exec spatial join and return index_right i.e. the polygon ID containing the point
-    points_geo = points[["geometry"]].set_crs(polygons.crs)
     polygons_geo = polygons[["geometry"]]
+    # build geometry from latitude/longitude set
+    points_geo = geopandas.GeoDataFrame().set_geometry(geopandas.points_from_xy(points.longitude, points.latitude)).set_crs(polygons.crs)
+    # spatial join concatenate features with predicate. index_right is the index of polygons containing the points
     spatial_lookup = points_geo.sjoin(polygons_geo, how="left", predicate="within")["index_right"]
     # if NaN in data not all points were within a polygon e.g. coastal cities off-shore
     not_in_polygon = spatial_lookup.isna()
     if not_in_polygon.any():
+        # nearest spatial join
         spatial_lookup[not_in_polygon] = points_geo[not_in_polygon].sjoin_nearest(polygons_geo, how="left")["index_right"]
     return spatial_lookup.astype(int)
 
@@ -147,12 +147,13 @@ def build_place_gazetteer(points: pandas.DataFrame) -> pandas.DataFrame:
     logging.debug("build place gazetteer")
     # extract places
     places = points.city_name.rename("place_name")
+    ascii_places = points.city_asciiname.rename("place_name_ascii")
     # explode_alternate_names
     alt_places = pandas.DataFrame(
         points.city_alternatenames.fillna('').str.split(",").tolist()
     ).add_prefix("place_name_alt")
     # build gazetteer
-    return pandas.concat([points.geometry, places, alt_places], axis=1)
+    return pandas.concat([points.latitude.astype(float), points.longitude.astype(float), places, ascii_places, alt_places], axis=1)
 
 
 def build_region_gazetteer(polygons: pandas.DataFrame) -> pandas.DataFrame:
