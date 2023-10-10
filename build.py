@@ -173,8 +173,8 @@ def build_region_gazetteer(polygons: pandas.DataFrame) -> pandas.DataFrame:
     gazetteer = pandas.concat([
         varnames.replace('tempvalue', None),
         polygons.loc[:, ["NAME_5","NAME_4","NL_NAME_3","NAME_3","NL_NAME_2","NAME_2","NL_NAME_1","NAME_1"]].add_prefix(prefix),
-        polygons.NAME_0,
-        polygons.GID_0,
+        polygons.NAME_0.rename("country_name"),
+        polygons.GID_0.rename("country_iso3"),
         polygons.UID,
     ], axis=1)
     # normalize column names
