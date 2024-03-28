@@ -13,17 +13,23 @@ jobs:
         python-version: ["3.10"]
 
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-      - name: Install dependencies
-        run: |
-          curl -sSL https://install.python-poetry.org | POETRY_VIRTUALENVS_IN_PROJECT=true python3 - && \
-          poetry install --no-cache --compile --only main
 
+      - uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v4
+      - name: Install poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Setup a local virtual environment (if no poetry.toml file)
+        run: |
+          poetry config virtualenvs.create true --local
+          poetry config virtualenvs.in-project true --local
+      - uses: actions/cache@v3
+        name: Define a cache for the virtual environment based on the dependencies lock file
+        with:
+          path: ./.venv
+          key: venv-${{ hashFiles('poetry.lock') }}
+      - name: Install the project dependencies
+        run: poetry install
       # files in data do not change unless
       # repo URL is updated and new file is downloaded
       - name: Cache Polygons
@@ -36,7 +42,7 @@ jobs:
       - name: Build gazetteer
         run: |
           mkdir -p ./data
-          python build.py
+          poetry run python -B build.py
       - name: Changelog
         uses: scottbrenner/generate-changelog-action@master
         id: Changelog
