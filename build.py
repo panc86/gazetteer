@@ -1,80 +1,78 @@
+import argparse
 import logging
-import os
-import pandas
-import zipfile
-import requests
 import warnings
+import os
 
-os.environ['USE_PYGEOS'] = '0'
-import geopandas
-
+from geopandas import GeoDataFrame, points_from_xy
+import pandas
+import pyogrio
+import requests
 from tqdm import tqdm
+
 
 # remove user warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+pyogrio.set_gdal_config_options({"OGR_ORGANIZE_POLYGONS": "SKIP"})
 
-# set fiona logging level to error to reduce verbosity
-logging.getLogger("fiona").setLevel(logging.ERROR)
 
 # data path
 DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+os.makedirs(DATA_PATH, exist_ok=True)
 
 
-def download_geometries(url: str) -> str:
-    """Download external data."""
-    path = os.path.join(DATA_PATH, os.path.basename(url))
-    logging.info("⏳ downloading from {url} to {path}".format(url=url, path=path))
-    if os.path.exists(path):
-        return path
+GEONAMES_CITIES_15K_REMOTE_URL = "http://download.geonames.org/export/dump/cities15000.zip"
+GADM_REMOTE_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gdb.zip"
+GADM_FILE_NAME = os.path.basename(GADM_REMOTE_URL)
+GADM_LOCAL_ARCHIVE_PATH = os.path.join(DATA_PATH, GADM_FILE_NAME)
+# allow reading a compressed geodatabase with pyogrio
+GADM_LOCAL_PYOGRIO_PATH = (
+    f"zip:{GADM_LOCAL_ARCHIVE_PATH}!/{GADM_FILE_NAME.replace('-gdb.zip', '.gdb')}"
+)
+
+
+def download_geometries(url: str, output_path: str):
+    logging.debug(dict(source=url, destination=output_path))
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
         chunk_size = 1024
-        total_bytes = int(r.headers.get('content-length', 0))
-        with open(path, 'wb') as f:
-            with tqdm(unit='B', unit_scale=True, unit_divisor=chunk_size, miniters=1, desc=path, total=total_bytes) as p:
-                for chunk in r.iter_content(chunk_size=chunk_size*10):
+        total_bytes = int(r.headers.get("content-length", 0))
+        with open(output_path, "wb") as f:
+            with tqdm(
+                unit="B",
+                unit_scale=True,
+                unit_divisor=chunk_size,
+                miniters=1,
+                desc=output_path,
+                total=total_bytes,
+            ) as p:
+                for chunk in r.iter_content(chunk_size=chunk_size * 10):
                     f.write(chunk)
                     p.update(len(chunk))
-    return path
 
 
-def unzip_gadm(filepath):
-    logging.debug("unzip {}".format(filepath))
-    with zipfile.ZipFile(filepath, 'r') as archive:
-        archive.extractall(path=os.path.dirname(filepath))
-    return filepath.replace("-gdb.zip", ".gdb")
-
-
-def load_gadm(path: str) -> pandas.DataFrame:
-    logging.debug("loading GADM polygons")
-    return geopandas.read_file(path, driver='FileGDB')
-
-
-def remove_polygons(df: pandas.DataFrame) -> pandas.DataFrame:
-    """Remove polygons without social media activity"""
-    logging.debug("remove unused GADM polygons")
-    to_drop = ["Antartica", "Caspian Sea"]
+def remove_regions(df: GeoDataFrame) -> GeoDataFrame:
+    logging.debug("remove unused GADM regions")
+    to_drop = ["Antarctica", "Caspian Sea"]
     return df.loc[~df.NAME_0.isin(to_drop), :].copy()
 
 
-def update_polygon_meta(df: pandas.DataFrame) -> pandas.DataFrame:
-    """Update missing metadata"""
-    logging.debug("update missing GADM polygon meta")
+def update_polygon_meta(df: GeoDataFrame) -> GeoDataFrame:
+    logging.debug("update missing GADM region meta")
     # Ukraine
-    df.loc[(df.NAME_1 == "?").idxmax(), ["NAME_1","NL_NAME_1","HASC_1","ENGTYPE_1"]] = ["Kiev City", "Київ", "UA.KC", "Independent City"]
+    df.loc[
+        (df.NAME_1 == "?").idxmax(), ["NAME_1", "NL_NAME_1", "HASC_1", "ENGTYPE_1"]
+    ] = ["Kiev City", "Київ", "UA.KC", "Independent City"]
     return df
 
 
-def fill_missing_region_names(df: pandas.DataFrame) -> pandas.DataFrame:
-    """Fill missing region names with country name"""
+def fill_missing_region_names(df: GeoDataFrame) -> GeoDataFrame:
     logging.debug("fill missing GADM region names with country name")
     regionless = df.NAME_1.isna()
     df.loc[regionless, "NAME_1"] = df.loc[regionless, "NAME_0"]
     return df
 
 
-def rename_region_name_attributes(df: pandas.DataFrame) -> pandas.DataFrame:
-    """Rename wrong region name attributes"""
+def rename_region_name_attributes(df: GeoDataFrame) -> GeoDataFrame:
     logging.debug("rename wrong GADM region name attributes")
     mapping = {
         "Apulia": "Puglia",
@@ -84,18 +82,23 @@ def rename_region_name_attributes(df: pandas.DataFrame) -> pandas.DataFrame:
     return df
 
 
-def download_and_prepare_gadm():
-    url = "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gdb.zip"
-    df = load_gadm(unzip_gadm(download_geometries(url)))
+def load_regions(filepath: str) -> GeoDataFrame:
+    logging.info("loading {}".format(filepath))
+    return pyogrio.read_dataframe(filepath)
+
+
+def build_regions(gadm: GeoDataFrame) -> GeoDataFrame:
+    logging.info("building regions")
     return (
-        df.pipe(remove_polygons)  # remove inhabitated polygons e.g. Antartica
-          .pipe(update_polygon_meta)  # e.g. Ukraine has missing data
-          .pipe(fill_missing_region_names)  # small countries are regionless
-          .pipe(rename_region_name_attributes)  # rename regions using local knownledge
+        gadm
+        .pipe(remove_regions)  # remove inhabitated polygons e.g. Antartica
+        .pipe(update_polygon_meta)  # e.g. Ukraine has missing data
+        .pipe(fill_missing_region_names)  # small countries are regionless
+        .pipe(rename_region_name_attributes)  # rename regions using local knownledge
     )
 
 
-def download_geonames_cities_15k():
+def load_cities(path: str) -> pandas.DataFrame:
     """
     Geonames DB @ http://download.geonames.org/export/dump/cities15000.zip
     """
@@ -122,17 +125,15 @@ def download_geonames_cities_15k():
         "timezone",
         "modification_date",
     ]
-    path = download_geometries("http://download.geonames.org/export/dump/cities15000.zip")
-    cities = pandas.read_csv(path, sep="\t", names=fields)
-    return cities
+    return pandas.read_csv(path, sep="\t", names=fields)
 
 
 def points_in_polygons_lookup(points, polygons) -> pandas.Series:
-    logging.debug("⏳ executing point-in-polygon spatial join")
+    logging.debug("executing point-in-polygon spatial join")
     # exec spatial join and return index_right i.e. the polygon ID containing the point
     polygons_geo = polygons[["geometry"]]
     # build geometry from latitude/longitude set
-    points_geo = geopandas.GeoDataFrame().set_geometry(geopandas.points_from_xy(points.longitude, points.latitude)).set_crs(polygons.crs)
+    points_geo = GeoDataFrame(geometry=points_from_xy(points.longitude, points.latitude), crs=polygons.crs)
     # spatial join concatenate features with predicate. index_right is the index of polygons containing the points
     spatial_lookup = points_geo.sjoin(polygons_geo, how="left", predicate="within")["index_right"]
     # if NaN in data not all points were within a polygon e.g. coastal cities off-shore
@@ -192,36 +193,20 @@ def build_gazetteer(points: pandas.DataFrame, polygons: pandas.DataFrame) -> Non
     gazetteer.to_json(os.path.join(DATA_PATH, "gazetteer.json.zip"), orient="records", date_format=None, lines=True, force_ascii=False)
 
 
-def build_regions(polygons: pandas.DataFrame) -> None:
-    """Build regions from dissolved polygons"""
-    logging.info("building regions")
-    features = ["geometry","UID","NL_NAME_1","NAME_1","NAME_0","GID_0"]
-    # aggregate regions using GADM NAME_1 level shape(3555, 6)
-    polygons.dissolve(
-        by="NAME_1", aggfunc='first', as_index=False, level=None, sort=True, observed=False, dropna=False
-    )[features].to_file(os.path.join(DATA_PATH, 'gadm41_regions.shp.zip'), driver='ESRI Shapefile')
-
-
 def main():
-    # download and prepare shapes data
-    polygons = download_and_prepare_gadm()
-    points = download_geonames_cities_15k()
+    parser = argparse.ArgumentParser(description="Build gazetteer using GADM and Geonames data")
+    parser.add_argument("--debug", action="store_true", default=False)
+    args = parser.parse_args()
+    # setup root logger level
+    logging.root.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    if not os.path.exists(GADM_LOCAL_ARCHIVE_PATH):
+        download_geometries(GADM_REMOTE_URL, GADM_LOCAL_ARCHIVE_PATH)
+    geonames_cities = load_cities(GEONAMES_CITIES_15K_REMOTE_URL)
+    gadm_regions = build_regions(load_regions(GADM_LOCAL_PYOGRIO_PATH))
     # build gazetteer
-    build_gazetteer(points, polygons)
-    # build regions
-    build_regions(polygons)
+    build_gazetteer(geonames_cities, gadm_regions)
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        prog="Gazetteer",
-        description="Build a region shapefile and places gazetteer using GADM and Geonames data."
-    )
-    parser.add_argument(
-        "--debug", action="store_true", default=False, help="Enables debugging."
-    )
-    args = parser.parse_args()
-    logging.root.setLevel(logging.DEBUG if args.debug else logging.INFO)
     main()
+

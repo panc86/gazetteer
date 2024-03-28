@@ -64,13 +64,3 @@ jobs:
           asset_path: ./data/gazetteer.json.zip
           asset_name: gazetteer.json.zip
           asset_content_type: application/zip
-      - name: Upload GADM Regions Asset
-        id: upload-region-release-asset 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./data/gadm41_regions.shp.zip
-          asset_name: gadm41_regions.shp.zip
-          asset_content_type: application/zip
