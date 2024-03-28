@@ -1,13 +1,19 @@
 # Gazetteer
 
-Build a *gazetteer.csv.zip*, and a *gadm41_regions.shp.zip* files for geocoding purpose.
+Build gazetteer using GADM regions and Geonames cities above 15k pop
 
 ## Build
 
-> :coffee: This may take several minutes depending on you connection.
+> :coffee: It may take several minutes on first built due to GADM database download
+
+Install dependencies
 
 ```shell
-python3 -m venv .pyve
-.pyve/bin/pip install -r requirements.txt
-.pyve/bin/python build.py
+poetry install
+```
+
+Build gazetteer
+
+```shell
+poetry run python -B build.py
 ```
