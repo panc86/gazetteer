@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "gazetteer"
+version = "0.1.0"
+description = "Gazetteer from GADM regions and Geonames cities 15K"
+authors = ["Emanuele Panizio <panc86@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.31.0"
+geopandas = "^0.14.3"
+pandas = "^2.2.1"
+pyogrio = "^0.7.2"
+Rtree = "^1.2.0"
+tqdm = "^4.66.2"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.4"
+notebook = "^7.1.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
