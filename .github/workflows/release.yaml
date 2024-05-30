@@ -29,16 +29,7 @@ jobs:
           path: ./.venv
           key: venv-${{ hashFiles('poetry.lock') }}
       - name: Install the project dependencies
-        run: poetry install
-      # files in data do not change unless
-      # repo URL is updated and new file is downloaded
-      - name: Cache Polygons
-        id: cache-polygons
-        uses: actions/cache@v3
-        with:
-          path: ./data
-          key: ${{ runner.os }}-polygons
-
+        run: poetry install --only main
       - name: Build gazetteer
         run: |
           poetry run python -B src/main.py
