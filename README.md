@@ -15,5 +15,5 @@ poetry install
 Build gazetteer
 
 ```shell
-poetry run python -B build.py
+poetry run python -B src/main.py
 ```
